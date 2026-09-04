@@ -109,6 +109,6 @@ runs the adaptive-learning experiment, and exports `best_model.pkl` and
 ## Limitations
 
 Reported performance reflects a balanced test set and features derived from the
-URL string alone. Known limitations — including dataset distribution bias and
-the simulated (non-timestamped) nature of the drift experiment — are documented
+URL string alone. Known limitations including dataset distribution bias and
+the simulated (non-timestamped) nature of the drift experiment are documented
 in full in the accompanying dissertation.
