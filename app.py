@@ -24,8 +24,8 @@ from lime.lime_tabular import LimeTabularExplainer
 from features import extract_features, full_analysis
 
 BASE = os.path.dirname(__file__)
-MODEL_PATH = os.path.join(BASE, "models", "best_model.pkl")
-DATA_PATH  = os.path.join(BASE, "data", "dataset.csv")
+MODEL_PATH = os.path.join(BASE, "best_model.pkl")
+DATA_PATH  = os.path.join(BASE, "dataset.csv")
 
 st.set_page_config(page_title="Phishing URL Detector",
                    page_icon="🛡️", layout="wide")
