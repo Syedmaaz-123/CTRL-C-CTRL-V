@@ -46,8 +46,7 @@ repository and is hosted on Google Drive:
 
 **Download `best_model.pkl`:** https://drive.google.com/file/d/1RkDFYMNa2SwSlDpaprj-oMkP2Bi7D743/view?usp=sharing
 
-After downloading, place it in a `models/` folder alongside `app.py`
-(see "How to run" below).
+Place it in the same folder as `app.py` (see "How to run" below).
 
 The model was produced by running the notebook. It contains the selected
 Random Forest classifier, the model name, and the feature order.
@@ -70,21 +69,19 @@ version (`dataset.csv`) is included in this repository.
 - Clone or download this repository (includes the code and `dataset.csv`).
 - Download `best_model.pkl` from the Google Drive link above.
 
-### 2. Set up the folders
-Place the files so the structure is:
+### 2. Place all files in one folder
+Put everything together in a single folder:
 ```
 project/
 ├── app.py
 ├── features.py
 ├── requirements.txt
-├── data/
-│   └── dataset.csv
-└── models/
-    └── best_model.pkl
+├── dataset.csv
+└── best_model.pkl   (downloaded from Google Drive)
 ```
 
 ### 3. Install dependencies and run
-```bash
+```
 pip install -r requirements.txt
 streamlit run app.py
 ```
@@ -112,6 +109,6 @@ runs the adaptive-learning experiment, and exports `best_model.pkl` and
 ## Limitations
 
 Reported performance reflects a balanced test set and features derived from the
-URL string alone. Known limitations including dataset distribution bias and
-the simulated (non-timestamped) nature of the drift experiment are documented
+URL string alone. Known limitations — including dataset distribution bias and
+the simulated (non-timestamped) nature of the drift experiment — are documented
 in full in the accompanying dissertation.
