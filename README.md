@@ -3,7 +3,6 @@
 **Muhammad Tabish · Student ID: 77655620**
 MSc Dissertation · Leeds Beckett University
 
----
 
 ## Overview
 
@@ -17,15 +16,13 @@ with a transparent, feature-level explanation.
 never visits, resolves or contacts any URL. The SSL, DNS and region panels shown
 in the dashboard are inferred from the URL string, not from live network lookups.
 
----
 
 ## Research questions
 
-- **RQ1** — What is the impact of incremental learning on long-term detection?
-- **RQ2** — Can explainable outputs enhance understanding of, and trust in, automated detection?
-- **RQ3** — Which combination of features and algorithms is most effective?
+- **RQ1**: What is the impact of incremental learning on long-term detection?
+- **RQ2**: Can explainable outputs enhance understanding of, and trust in, automated detection?
+- **RQ3**: Which combination of features and algorithms is most effective?
 
----
 
 ## Repository contents
 
@@ -85,6 +82,6 @@ Then open http://localhost:8501, paste a URL, and click **Analyse**.
 ## Limitations
 
 Reported performance reflects a balanced test set and features derived from the
-URL string alone. Known limitations — including dataset distribution bias and
-the simulated (non-timestamped) nature of the drift experiment — are documented
+URL string alone. Known limitations including dataset distribution bias and
+the simulated (non-timestamped) nature of the drift experiment are documented
 in full in the accompanying dissertation.
