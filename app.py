@@ -1,73 +1,104 @@
-"""
-app.py — Phishing URL Detector (SOC card-style dashboard)
---------------------------------------------------------
-Card-based security-console layout focused on the CURRENT URL result.
-Shows: ML verdict + confidence, threat score, SSL/DNS/region/token cards,
-and SHAP + LIME explanations side by side.
+"""URLSentinel AI: local, feature-based phishing URL analysis dashboard."""
 
-Run:  streamlit run app.py
+import os
+import pickle
 
-ETHICS NOTE: SSL / DNS / region panels are derived from the URL STRING only.
-The app never visits or contacts the URL.
-"""
-
-import os, pickle
-import numpy as np
-import pandas as pd
-import streamlit as st
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import shap
+import streamlit as st
 from lime.lime_tabular import LimeTabularExplainer
 
 from features import extract_features, full_analysis
 
+
+# Keep all customer-facing brand values in one place for easy white-labeling.
+APP_NAME = "URLSentinel AI"
+TAGLINE = "Intelligent Phishing URL Detection & Risk Analysis"
+TEAM_NAME = "NexGuard AI"
+VERSION = "v1.0"
+LOGO_PATH = None  # Set to a local image path when a project logo is available.
+COLORS = {
+    "accent": "#24d3b5",
+    "accent_dark": "#0ca58e",
+    "on_accent": "#041411",
+    "background": "#07111f",
+    "surface": "#101d2d",
+    "surface_alt": "#142438",
+    "text": "#edf4fb",
+    "muted": "#9aabc0",
+    "danger": "#ff647c",
+    "warning": "#ffbd66",
+    "success": "#5de0a5",
+    "border": "#24384e",
+}
+
 BASE = os.path.dirname(__file__)
 MODEL_PATH = os.path.join(BASE, "best_model.pkl")
-DATA_PATH  = os.path.join(BASE, "dataset.csv")
+DATA_PATH = os.path.join(BASE, "dataset.csv")
 
-st.set_page_config(page_title="Phishing URL Detector",
-                   page_icon="🛡️", layout="wide")
+st.set_page_config(
+    page_title=APP_NAME,
+    page_icon=":material/shield_lock:",
+    layout="wide",
+)
 
-st.markdown("""
-<style>
-  .card {background:#ffffff; border:1px solid #e6e8eb; border-radius:12px;
-         padding:1rem 1.2rem; margin-bottom:0.8rem;}
-  .stat {background:#f6f8fa; border-radius:10px; padding:0.9rem 1rem;}
-  .stat .lbl {font-size:0.8rem; color:#6b7280;}
-  .stat .val {font-size:1.6rem; font-weight:600;}
-  .pill {display:inline-block; padding:3px 12px; border-radius:20px;
-         font-size:0.8rem; font-weight:600;}
-  .p-red{background:#fdecec; color:#c0392b;} .p-amber{background:#fef6e7; color:#b9770e;}
-  .p-green{background:#eafaf1; color:#1e8449;} .p-grey{background:#eef0f2; color:#566573;}
-  .mono{font-family:ui-monospace,Menlo,monospace; font-size:0.85rem; word-break:break-all;}
-  .topbar{display:flex; align-items:center; justify-content:space-between;
-          background:#ffffff; border:1px solid #e6e8eb; border-radius:12px;
-          padding:0.7rem 1.2rem; margin-bottom:1rem;}
-  .topbar .brand{font-size:1.15rem; font-weight:600; color:#1f2937;}
-  .topbar .brand small{font-size:0.72rem; font-weight:400; color:#6b7280; margin-left:8px;}
-  .topbar .right{display:flex; align-items:center; gap:14px; font-size:0.8rem; color:#6b7280;}
-  .topbar .who{text-align:right; line-height:1.25;}
-  .topbar .who b{color:#1f2937;}
-  .topbar .mdl{background:#eafaf1; color:#1e8449; font-weight:600;
-               padding:4px 12px; border-radius:20px; font-size:0.78rem; white-space:nowrap;}
-  header[data-testid="stHeader"]{display:none;}
-  .block-container{padding-top:1.2rem;}
-</style>
-""", unsafe_allow_html=True)
+
+def apply_brand_styles():
+    """Apply a small set of brand colors to the app's main surfaces and CTA."""
+    st.markdown(
+        f"""
+        <style>
+        :root {{
+            --us-accent: {COLORS['accent']};
+            --us-bg: {COLORS['background']};
+            --us-surface: {COLORS['surface']};
+            --us-text: {COLORS['text']};
+            --us-muted: {COLORS['muted']};
+            --us-border: {COLORS['border']};
+        }}
+        [data-testid="stAppViewContainer"] {{ background: var(--us-bg); }}
+        [data-testid="stHeader"] {{ background: rgba(7, 17, 31, 0.92); }}
+        [data-testid="stMetric"] {{
+            background: var(--us-surface);
+            border: 1px solid var(--us-border);
+            border-radius: 12px;
+            padding: 14px 16px;
+        }}
+        div.stButton > button[kind="primary"],
+        div.stFormSubmitButton > button[kind="primary"] {{
+            background: {COLORS['accent_dark']};
+            border: 1px solid {COLORS['accent']};
+            color: {COLORS['on_accent']};
+            font-weight: 700;
+        }}
+        div.stButton > button[kind="primary"]:hover,
+        div.stFormSubmitButton > button[kind="primary"]:hover {{
+            background: {COLORS['accent']};
+            border-color: {COLORS['accent']};
+            color: {COLORS['on_accent']};
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 @st.cache_resource
 def load_model():
+    """Load the existing pretrained artifact without modifying or retraining it."""
     if not os.path.exists(MODEL_PATH):
         return None
-    with open(MODEL_PATH, "rb") as f:
-        return pickle.load(f)
+    with open(MODEL_PATH, "rb") as model_file:
+        return pickle.load(model_file)
 
 
 @st.cache_data
 def load_train(cols):
+    """Load feature columns used as the reference data for LIME explanations."""
     if not os.path.exists(DATA_PATH):
         return None
     try:
@@ -76,185 +107,236 @@ def load_train(cols):
         return None
 
 
-def pill(level):
-    cls = {"High":"p-red","Elevated":"p-amber","Medium":"p-amber",
-           "Low":"p-green","Neutral":"p-green"}.get(level,"p-grey")
-    return f"<span class='pill {cls}'>{level}</span>"
-
-
-def gauge(prob):
-    import matplotlib.patches as mp
-    fig, ax = plt.subplots(figsize=(3.6,2.1))
-    for a0,a1,col in [(0,60,"#1e8449"),(60,120,"#e67e22"),(120,180,"#c0392b")]:
-        ax.add_patch(mp.Wedge((0,0),1,180-a1,180-a0,width=0.34,facecolor=col,alpha=0.9))
-    ang=np.pi*(1-prob)
-    ax.plot([0,0.8*np.cos(ang)],[0,0.8*np.sin(ang)],lw=3,color="#2c3e50")
-    ax.add_patch(mp.Circle((0,0),0.05,color="#2c3e50"))
-    ax.text(0,-0.18,f"{prob*100:.0f}%",ha="center",fontsize=17,weight="bold")
-    ax.set_xlim(-1.2,1.2); ax.set_ylim(-0.35,1.15); ax.axis("off")
-    ax.set_aspect("equal"); plt.tight_layout()
-    return fig
-
-
 def shap_fig(model, X1, cols):
-    expl = shap.TreeExplainer(model)
-    sv = expl.shap_values(X1, check_additivity=False)
-    if isinstance(sv, list):
-        sv = sv[1]
-    sv = np.array(sv)
-    if sv.ndim == 3:            # newer SHAP: (samples, features, classes)
-        sv = sv[:, :, 1]
-    vals = np.array(sv[0]).ravel()[:len(cols)]
-    idx = np.argsort(np.abs(vals))[-10:]
-    fig, ax = plt.subplots(figsize=(6,4))
-    colors = ["#c0392b" if v>0 else "#2980b9" for v in vals[idx]]
-    ax.barh([cols[i] for i in idx], vals[idx], color=colors)
-    ax.axvline(0, color="grey", lw=0.8, ls="--")
-    ax.set_xlabel("← legitimate    SHAP contribution    phishing →")
-    ax.set_title("SHAP — why this decision")
-    plt.tight_layout()
+    """Build a local SHAP feature-contribution chart for the phishing class."""
+    explainer = shap.TreeExplainer(model)
+    values = explainer.shap_values(X1, check_additivity=False)
+    if isinstance(values, list):
+        values = values[1]
+    values = np.array(values)
+    if values.ndim == 3:  # Newer SHAP versions return samples/features/classes.
+        values = values[:, :, 1]
+
+    row_values = np.array(values[0]).ravel()[: len(cols)]
+    indices = np.argsort(np.abs(row_values))[-10:]
+    colors = [COLORS["danger"] if row_values[i] > 0 else COLORS["accent"] for i in indices]
+
+    fig, ax = plt.subplots(figsize=(7, 4), facecolor=COLORS["surface"])
+    ax.set_facecolor(COLORS["surface"])
+    ax.barh([cols[i] for i in indices], row_values[indices], color=colors)
+    ax.axvline(0, color=COLORS["muted"], lw=0.8, ls="--")
+    ax.set_xlabel("← toward legitimate     SHAP contribution     toward phishing →", color=COLORS["text"])
+    ax.set_title("Feature contributions for this URL", color=COLORS["text"])
+    ax.tick_params(colors=COLORS["muted"])
+    for spine in ax.spines.values():
+        spine.set_color(COLORS["border"])
+    fig.tight_layout()
     return fig
 
 
 def lime_fig(model, X1, cols, Xtrain):
-    ex = LimeTabularExplainer(Xtrain, feature_names=cols,
-                              class_names=["Legitimate","Phishing"],
-                              mode="classification", discretize_continuous=True)
-    e = ex.explain_instance(X1.values[0], model.predict_proba, num_features=8)
-    fig = e.as_pyplot_figure(); fig.set_size_inches(6,4)
-    plt.title("LIME — local explanation"); plt.tight_layout()
+    """Build a local LIME explanation using the bundled feature dataset."""
+    explainer = LimeTabularExplainer(
+        Xtrain,
+        feature_names=cols,
+        class_names=["Legitimate", "Phishing"],
+        mode="classification",
+        discretize_continuous=True,
+    )
+    explanation = explainer.explain_instance(
+        X1.values[0], model.predict_proba, num_features=8
+    )
+    fig = explanation.as_pyplot_figure()
+    fig.set_size_inches(7, 4)
+    fig.tight_layout()
     return fig
 
 
-def main():
-    art = load_model()
+def show_brand_header(artifact):
+    """Render the product identity and the original model attribution."""
+    if LOGO_PATH and os.path.isfile(LOGO_PATH):
+        st.logo(LOGO_PATH, size="large", icon_image=":material/shield_lock:")
 
-    model_label = (f"Model: {art['model_name']}" if art else "Run train.py first")
-    mdl_class = "mdl" if art else "pill p-red"
-    st.markdown(f"""
-    <div class='topbar'>
-      <div class='brand'>🛡️ URL Detector <small>Adaptive &amp; Explainable ML</small></div>
-      <div class='right'>
-        <div class='who'><b>Muhammad Tabish</b><br>Student ID: 77655620</div>
-        <span class='{mdl_class}'>{model_label}</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
+    model_name = artifact.get("model_name", "Pretrained model") if artifact else "Model unavailable"
+    with st.container(border=True):
+        st.title(APP_NAME, icon=":material/shield_lock:")
+        st.write(f"**{TAGLINE}**")
+        st.caption(f"{TEAM_NAME} · {VERSION} · Model: {model_name}")
 
-    st.markdown("## Phishing URL threat analysis")
-    st.caption("String-based analysis only. URLs are never visited.")
 
-    url = st.text_input("URL to analyse",
-                        placeholder="http://secure-login-paypal.xyz/verify@account")
-    go = st.button("🔍 Analyse", type="primary")
+def show_model_information(artifact):
+    """Keep model provenance and runtime status visible in the sidebar."""
+    with st.sidebar:
+        st.subheader("Model information")
+        if artifact:
+            st.success(f"Loaded: {artifact.get('model_name', 'Pretrained model')}")
+            st.caption(f"Input features: {len(artifact['feature_cols'])}")
+            st.caption("Inference only · no retraining")
+        else:
+            st.error("Pretrained model not found")
+            st.caption("Place best_model.pkl beside app.py to enable ML predictions.")
+        st.caption(f"Application version {VERSION}")
+        st.divider()
+        st.caption(
+            "Original research and model attribution: Muhammad Tabish (Student ID "
+            "77655620), MSc dissertation, Leeds Beckett University. URLSentinel AI is "
+            "a branded interface and does not claim to have trained the supplied model."
+        )
 
-    if not go or not url.strip():
-        st.info("Enter a URL and click Analyse.")
-        p = os.path.join(BASE,"models","shap_bar.png")
-        if os.path.exists(p):
-            st.markdown("#### Global feature importance (SHAP)")
-            st.image(p)
+
+def show_url_indicators(analysis):
+    """Show indicators that features.py actually derives from the URL string."""
+    features = analysis["features"]
+    ssl = analysis["ssl"]
+    tokens = analysis["tokens"]
+
+    metric_columns = st.columns(4)
+    metric_columns[0].metric("URL length", features["url_length"])
+    metric_columns[1].metric("Dots", features["num_dots"])
+    metric_columns[2].metric("Subdomains", features["num_subdomains"])
+    metric_columns[3].metric("Digits", features["num_digits"])
+
+    indicators = pd.DataFrame(
+        [
+            ("IP-like host", "Detected" if features["has_ip"] else "Not detected"),
+            ("URL scheme", ssl["scheme"].upper()),
+            ("Suspicious keywords", ", ".join(tokens["suspicious_tokens"]) or "None found"),
+            ("Brand terms", ", ".join(tokens["brand_terms"]) or "None found"),
+            (
+                "Special characters",
+                f"hyphens {features['num_hyphens']} · @ {features['num_at_signs']} · "
+                f"? {features['num_question_marks']} · % {features['num_percent']}",
+            ),
+            ("Top-level domain", analysis["dns"]["tld"]),
+        ],
+        columns=["Indicator", "Observed value"],
+    )
+    st.dataframe(indicators, hide_index=True, width="stretch")
+    st.caption(
+        "Indicators are derived from the URL text. HTTPS shows only the written scheme; "
+        "the app does not verify certificates, resolve DNS, or contact the host."
+    )
+
+
+def show_explanations(artifact, model, X1, cols, analysis):
+    """Separate URL heuristics from model-specific SHAP and LIME explanations."""
+    st.subheader("Why this result")
+    st.markdown("**URL indicators (separate from the model decision)**")
+    reasons = analysis["threat"]["reasons"]
+    if reasons:
+        for points, reason in reasons:
+            st.write(f"+{points} points · {reason}")
+    else:
+        st.write("No configured rule-based risk indicators were found.")
+
+    if not artifact or model is None or X1 is None:
+        st.info("Model-based explanations are unavailable until best_model.pkl is present.")
         return
 
-    url = url.strip()
-    a = full_analysis(url)
-    ssl, dns, geo, tok, thr = a["ssl"], a["dns"], a["geo"], a["tokens"], a["threat"]
-
-    # ---- current URL banner ----
-    st.markdown(f"<div class='card'><div style='font-size:0.8rem;color:#6b7280'>"
-                f"Current URL</div><div class='mono'>{url}</div></div>",
-                unsafe_allow_html=True)
-
-    # ---- top stat row ----
-    X1 = None; is_phish = None; proba = None
-    if art:
-        model, cols = art["model"], art["feature_cols"]
-        X1 = pd.DataFrame([extract_features(url)])[cols]
-        proba = model.predict_proba(X1)[0]
-        is_phish = model.predict(X1)[0] == 1
-
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        if is_phish is None:
-            v = "—"
+    st.markdown("**Model explanations**")
+    shap_column, lime_column = st.columns(2)
+    with shap_column:
+        st.markdown("SHAP")
+        try:
+            st.pyplot(shap_fig(model, X1, cols), clear_figure=True)
+        except Exception as exc:
+            st.warning(f"SHAP explanation could not be rendered: {exc}")
+    with lime_column:
+        st.markdown("LIME")
+        reference_data = load_train(cols)
+        if reference_data is None:
+            st.info("LIME reference features are unavailable in dataset.csv.")
         else:
-            v = ("<span class='pill p-red'>Phishing</span>" if is_phish
-                 else "<span class='pill p-green'>Legitimate</span>")
-        st.markdown(f"<div class='stat'><div class='lbl'>ML verdict</div>"
-                    f"<div style='margin-top:6px'>{v}</div></div>", unsafe_allow_html=True)
-    with c2:
-        pv = f"{proba[1]*100:.0f}%" if proba is not None else "—"
-        st.markdown(f"<div class='stat'><div class='lbl'>Phishing probability</div>"
-                    f"<div class='val'>{pv}</div></div>", unsafe_allow_html=True)
-    with c3:
-        st.markdown(f"<div class='stat'><div class='lbl'>Threat score</div>"
-                    f"<div class='val'>{thr['score']}<span style='font-size:0.9rem;color:#6b7280'>/100</span></div></div>",
-                    unsafe_allow_html=True)
-    with c4:
-        st.markdown(f"<div class='stat'><div class='lbl'>Threat level</div>"
-                    f"<div style='margin-top:6px'>{pill(thr['level'])}</div></div>",
-                    unsafe_allow_html=True)
-
-    if proba is not None:
-        g1, g2 = st.columns([1,2])
-        with g1:
-            st.pyplot(gauge(proba[1])); plt.close()
-        with g2:
-            st.markdown("**Threat score breakdown**")
-            if thr["reasons"]:
-                st.markdown("\n".join(f"- **+{p}** {m}" for p,m in thr["reasons"]))
-            else:
-                st.markdown("- No risk indicators triggered")
-
-    st.markdown("---")
-
-    # ---- analysis cards ----
-    st.markdown("#### Detailed analysis")
-    d1, d2, d3, d4 = st.columns(4)
-    with d1:
-        st.markdown(f"<div class='card'><b>🔒 SSL</b><br>{ssl['verdict']}<br>"
-                    f"{pill(ssl['risk'])}</div>", unsafe_allow_html=True)
-    with d2:
-        st.markdown(f"<div class='card'><b>🌐 DNS</b><br>{dns['tld']} · "
-                    f"{dns['num_subdomains']} sub<br>{pill(dns['risk'])}</div>",
-                    unsafe_allow_html=True)
-    with d3:
-        st.markdown(f"<div class='card'><b>📍 Region</b><br>{geo['inferred_region']}<br>"
-                    f"{pill(geo['risk'])}</div>", unsafe_allow_html=True)
-    with d4:
-        toks = ", ".join(tok["suspicious_tokens"][:3]) or "none"
-        st.markdown(f"<div class='card'><b>🔑 Tokens</b><br>{toks}<br>"
-                    f"{pill(tok['risk'])}</div>", unsafe_allow_html=True)
-
-    st.markdown("---")
-
-    # ---- explanations: SHAP + LIME ----
-    if art and X1 is not None:
-        st.markdown("#### Explainability")
-        e1, e2 = st.columns(2)
-        with e1:
             try:
-                st.pyplot(shap_fig(model, X1, cols)); plt.close()
-            except Exception as ex:
-                st.warning(f"SHAP unavailable: {ex}")
-        with e2:
-            Xtr = load_train(cols)
-            if Xtr is None:
-                st.info("LIME needs training data. Run `python prepare_data.py` "
-                        "then `python train.py`, and keep data/dataset.csv in place.")
-            else:
-                try:
-                    st.pyplot(lime_fig(model, X1, cols, Xtr)); plt.close()
-                except Exception as ex:
-                    st.warning(f"LIME could not render: {ex}")
+                st.pyplot(lime_fig(model, X1, cols, reference_data), clear_figure=True)
+            except Exception as exc:
+                st.warning(f"LIME explanation could not be rendered: {exc}")
 
-        with st.expander("📊 Full feature table"):
-            feats = extract_features(url)
-            st.dataframe(pd.DataFrame(feats.items(), columns=["Feature","Value"]),
-                         use_container_width=True, hide_index=True)
 
-    st.caption("Adaptive & Explainable ML Framework · Muhammad Tabish · 77655620 · "
-               "Analysis is string-derived; URLs are not visited.")
+def main():
+    apply_brand_styles()
+    artifact = load_model()
+    show_brand_header(artifact)
+    show_model_information(artifact)
+
+    st.header("URL scanner", icon=":material/search:")
+    st.write("Analyze URL text locally. Submitted URLs are never opened or contacted.")
+    with st.form("url_scan_form", border=True):
+        url = st.text_input(
+            "URL to scan",
+            placeholder="https://example.com/account/login",
+            help="Paste the URL as text; the scanner will not visit it.",
+        )
+        submitted = st.form_submit_button(
+            "Scan URL", type="primary", icon=":material/radar:"
+        )
+
+    if not submitted:
+        st.info("Enter a URL above and select Scan URL to see its analysis.")
+        return
+    if not url.strip():
+        st.warning("Enter a URL before scanning.")
+        return
+
+    # The URL is treated strictly as text. No request is made to its host.
+    url = url.strip()
+    analysis = full_analysis(url)
+    st.subheader("URL analysis")
+    st.code(url, language=None)
+
+    model = None
+    X1 = None
+    columns = None
+    predicted_phishing = None
+    probabilities = None
+    if artifact:
+        model, columns = artifact["model"], artifact["feature_cols"]
+        # Preserve the model's saved feature order and existing inference calls.
+        X1 = pd.DataFrame([extract_features(url)])[columns]
+        probabilities = model.predict_proba(X1)[0]
+        predicted_phishing = model.predict(X1)[0] == 1
+
+    st.subheader("Detection result")
+    if predicted_phishing is None:
+        st.error("ML prediction unavailable because best_model.pkl was not found.")
+    else:
+        status = "PHISHING" if predicted_phishing else "LEGITIMATE"
+        risk = "HIGH" if predicted_phishing else "LOW"
+        confidence = probabilities[1] if predicted_phishing else probabilities[0]
+        result_columns = st.columns(3)
+        result_columns[0].metric("Status", status)
+        result_columns[1].metric("Risk level", risk)
+        result_columns[2].metric("Model confidence", f"{confidence * 100:.1f}%")
+
+        st.progress(
+            float(probabilities[1]),
+            text=f"Model phishing probability: {probabilities[1] * 100:.1f}%",
+        )
+
+    st.subheader("Risk assessment")
+    risk_columns = st.columns(2)
+    risk_columns[0].metric("Rule-based threat score", f"{analysis['threat']['score']} / 100")
+    risk_columns[1].metric("Rule-based indicator level", analysis["threat"]["level"])
+    st.caption(
+        "The threat score is a separate fixed-rule summary; it does not change the ML prediction."
+    )
+
+    st.subheader("Security indicators")
+    show_url_indicators(analysis)
+
+    st.subheader("Feature analysis")
+    feature_table = pd.DataFrame(
+        analysis["features"].items(), columns=["Feature", "Value"]
+    )
+    st.dataframe(feature_table, hide_index=True, width="stretch")
+
+    show_explanations(artifact, model, X1, columns, analysis)
+
+    st.caption(
+        f"{APP_NAME} {VERSION} · {TEAM_NAME} · Original model attribution: "
+        "Muhammad Tabish (Student ID 77655620). "
+        "String-based analysis only; URLs are not visited."
+    )
 
 
 if __name__ == "__main__":
